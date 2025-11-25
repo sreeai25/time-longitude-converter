@@ -49,7 +49,7 @@ def compute_decimal_hours():
 # ---------------- APP LAYOUT ----------------
 st.title("🕰️ 🌍 Time Zone ↔ Longitude Calculator")
 st.markdown(
-    "Click on the map to set longitude (auto-filled as default), or enter manually. "
+    "Click on the map to set longitude (auto-filled), or enter manually. "
     "Compute time zone or longitude and see detailed explanations."
 )
 
@@ -136,7 +136,6 @@ with left:
 with right:
     st.header("Interactive Map")
 
-    # Green line uses computed longitude if available, else last map click
     highlight_lon = st.session_state.computed_lon if st.session_state.computed_lon is not None else st.session_state.map_lon
 
     m = folium.Map(location=[st.session_state.map_lat, highlight_lon], zoom_start=4)
@@ -156,17 +155,30 @@ with right:
 
     map_data = st_folium(m, width=700, height=450)
 
-    # Update map session variables on click
+    # ---------------- Map click auto-fill ----------------
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
         sgn, d, m_val, s_val = decimal_to_dms(lon)
+
+        # Update map session state
         st.session_state.map_lat = lat
         st.session_state.map_lon = lon
         st.session_state.map_lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
         st.session_state.map_lon_deg = d
         st.session_state.map_lon_min = m_val
         st.session_state.map_lon_sec = round(s_val, 6)
+
+        # ---------------- FORCE auto-fill into input widgets ----------------
+        for key, val in [
+            ("lon_deg", st.session_state.map_lon_deg),
+            ("lon_min", st.session_state.map_lon_min),
+            ("lon_sec", st.session_state.map_lon_sec),
+            ("lon_dir", st.session_state.map_lon_dir),
+        ]:
+            st.session_state[key] = val
+
+        st.experimental_rerun()  # force rerun so inputs reflect map click
 
     # Display clicked coordinates
     st.markdown(
