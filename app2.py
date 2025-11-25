@@ -25,7 +25,6 @@ for key, default in [
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
-
             st.markdown("### Explanation")
             st.write(f"**Step 1: Convert D:M:S → Decimal Degrees:** {deg} + {minu}/60 + {sec}/3600 = {dec_deg:.6f}°")
             st.write(f"**Step 2: Decimal Degrees → Time Zone (hours):** {dec_deg:.6f}/15 = {tz_hours:.6f} h")
@@ -44,7 +43,6 @@ for key, default in [
         tz_m = st.number_input("Minutes",0,59,key="tz_m")
         tz_s = st.number_input("Seconds",0.0,59.999,key="tz_s")
         if st.button("Compute Longitude"):
-
             st.markdown("### Explanation")
             st.write(f"**Step 1: Convert H:M:S → Decimal Hours:** {tz_h} + {tz_m}/60 + {tz_s}/3600 = {dec_hours:.6f} h")
             st.write(f"**Step 2: Decimal Hours → Longitude:** {dec_hours:.6f} * 15 = {lon:.6f}°")
@@ -62,8 +60,6 @@ with right:
     highlight_lat = float(st.session_state.clicked_lat if st.session_state.clicked_lat is not None else 0.0)
 
     m = folium.Map(location=[highlight_lat, highlight_lon], zoom_start=4)
-
-
                     color="green",weight=3,opacity=0.7,
                     tooltip=f"Selected/Computed Longitude: {highlight_lon:.4f}°").add_to(m)
 
@@ -91,10 +87,7 @@ with right:
 
     # add green line for slider position
     folium.PolyLine([[90,highlight_lon],[-90,highlight_lon]], color="green", weight=3, opacity=0.7).add_to(m)
-
     map_data = st_folium(m,width=700,height=450)
-
-
         lon = map_data["last_clicked"]["lng"]
         st.session_state.clicked_lat = lat
         st.session_state.clicked_lon = lon
