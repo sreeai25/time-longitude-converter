@@ -12,13 +12,11 @@ import folium
 st.set_page_config(page_title="Time Zone ↔ Longitude", layout="wide")
 
 # ---------------- SESSION STATE ----------------
-# Map click coordinates
 if "map_lon" not in st.session_state:
     st.session_state.map_lon = 0.0
 if "map_lat" not in st.session_state:
     st.session_state.map_lat = 0.0
 
-# DMS values from map click
 if "map_lon_dir" not in st.session_state:
     st.session_state.map_lon_dir = "E (positive)"
 if "map_lon_deg" not in st.session_state:
@@ -28,42 +26,42 @@ if "map_lon_min" not in st.session_state:
 if "map_lon_sec" not in st.session_state:
     st.session_state.map_lon_sec = 0.0
 
-# Store computed longitude for highlighting in Time Zone → Longitude mode
 if "computed_lon" not in st.session_state:
     st.session_state.computed_lon = None
 
 # ---------------- FUNCTIONS ----------------
 def update_from_map(lat, lon):
-    """Update session state with map click and auto-fill longitude fields."""
+    """Update session state with map click and auto-fill longitude fields safely."""
     st.session_state.map_lat = lat
     st.session_state.map_lon = lon
 
     sgn, d, m, s = decimal_to_dms(lon)
 
-    # Store in map-specific session state
     st.session_state.map_lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
     st.session_state.map_lon_deg = d
     st.session_state.map_lon_min = m
     st.session_state.map_lon_sec = round(s, 6)
 
-    # Update the input widgets directly so they reflect the click
-    st.session_state.lon_dir = st.session_state.map_lon_dir
-    st.session_state.lon_deg = st.session_state.map_lon_deg
-    st.session_state.lon_min = st.session_state.map_lon_min
-    st.session_state.lon_sec = st.session_state.map_lon_sec
+    # Only update widget keys if they exist to avoid APIException
+    for key, value in [
+        ("lon_dir", st.session_state.map_lon_dir),
+        ("lon_deg", st.session_state.map_lon_deg),
+        ("lon_min", st.session_state.map_lon_min),
+        ("lon_sec", st.session_state.map_lon_sec),
+    ]:
+        if key in st.session_state:
+            st.session_state[key] = value
 
-    # Also update computed longitude for green line highlighting
+    # Update computed longitude for green line highlighting
     st.session_state.computed_lon = lon
 
 def compute_decimal_from_dms():
-    """Compute decimal longitude from current input fields."""
     sign = 1 if st.session_state.lon_dir.startswith("E") else -1
     return dms_to_decimal(
         st.session_state.lon_deg, st.session_state.lon_min, st.session_state.lon_sec, sign
     )
 
 def compute_decimal_hours():
-    """Compute decimal hours from time zone input fields."""
     sign = 1 if st.session_state.tz_sign == "+" else -1
     return hms_to_decimal_hours(
         st.session_state.tz_h, st.session_state.tz_m, st.session_state.tz_s, sign
@@ -148,7 +146,7 @@ with left:
         if st.button("Compute Longitude"):
             dec_hours = compute_decimal_hours()
             lon = longitude_from_timezone_hours(dec_hours)
-            st.session_state.computed_lon = lon  # store for map highlighting
+            st.session_state.computed_lon = lon
             sgn, d, m, s = decimal_to_dms(lon)
             dir_char = "E" if sgn >= 0 else "W"
             st.success(f"Longitude: {dir_char} {d}° {m}' {s:.3f}\"")
@@ -163,28 +161,27 @@ with left:
             st.write(f"D = {d}, M = {m}, S = {s:.3f}")
             st.write(f"Result: {dir_char} {d}° {m}' {s:.3f}\"")
 
-# ---------------- RIGHT PANEL: MAP ----------------
+# ---------------- RIGHT PANEL ----------------
 with right:
     st.header("Interactive Map")
 
-    # Determine the longitude to highlight
+    # Highlight longitude: computed if exists, else map click
     highlight_lon = (
         st.session_state.computed_lon
         if st.session_state.computed_lon is not None
         else st.session_state.map_lon
     )
 
-    # Map center
     center_lon = highlight_lon
     center_lat = st.session_state.map_lat
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
 
-    # Draw gray meridians for reference
+    # Gray meridians
     for lon_val in range(-180, 181, 30):
         folium.PolyLine([[90, lon_val], [-90, lon_val]], color="gray", weight=1).add_to(m)
 
-    # Draw green line for current selected/computed longitude
+    # Green line for selected/computed longitude
     folium.PolyLine(
         locations=[[90, highlight_lon], [-90, highlight_lon]],
         color="green",
@@ -195,7 +192,7 @@ with right:
 
     map_data = st_folium(m, width=700, height=450)
 
-    # Update map click coordinates
+    # Map click updates
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
