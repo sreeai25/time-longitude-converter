@@ -6,19 +6,19 @@ from utils import (
     hms_to_decimal_hours,
     longitude_from_timezone_hours,
 )
-import pandas as pd
 from streamlit_folium import st_folium
 import folium
 
 st.set_page_config(page_title="Time Zone ↔ Longitude", layout="wide")
 
 # ---------------- SESSION STATE ----------------
+# Map click coordinates
 if "map_lon" not in st.session_state:
     st.session_state.map_lon = 0.0
 if "map_lat" not in st.session_state:
     st.session_state.map_lat = 0.0
 
-# For storing DMS computed from map click
+# DMS values computed from map click (used as default)
 if "map_lon_dir" not in st.session_state:
     st.session_state.map_lon_dir = "E (positive)"
 if "map_lon_deg" not in st.session_state:
@@ -28,9 +28,13 @@ if "map_lon_min" not in st.session_state:
 if "map_lon_sec" not in st.session_state:
     st.session_state.map_lon_sec = 0.0
 
+# Store computed longitude in Time Zone → Longitude mode
+if "computed_lon" not in st.session_state:
+    st.session_state.computed_lon = None
+
 # ---------------- FUNCTIONS ----------------
 def update_from_map(lat, lon):
-    """Store map click coordinates and DMS for longitude safely."""
+    """Store map click coordinates and precompute DMS for longitude."""
     st.session_state.map_lat = lat
     st.session_state.map_lon = lon
     sgn, d, m, s = decimal_to_dms(lon)
@@ -132,6 +136,7 @@ with left:
         if st.button("Compute Longitude"):
             dec_hours = compute_decimal_hours()
             lon = longitude_from_timezone_hours(dec_hours)
+            st.session_state.computed_lon = lon  # store for map highlighting
             sgn, d, m, s = decimal_to_dms(lon)
             dir_char = "E" if sgn >= 0 else "W"
             st.success(f"Longitude: {dir_char} {d}° {m}' {s:.3f}\"")
@@ -150,15 +155,30 @@ with left:
 with right:
     st.header("Interactive Map")
 
-    # Determine center: if user entered longitude manually, zoom to it
+    # Determine the longitude to highlight
+    if mode == "Longitude → Time Zone":
+        highlight_lon = compute_decimal_from_dms()
+    else:
+        highlight_lon = st.session_state.computed_lon if st.session_state.computed_lon is not None else st.session_state.map_lon
+
+    # Map center
+    center_lon = highlight_lon
     center_lat = st.session_state.map_lat
-    center_lon = compute_decimal_from_dms() if mode=="Longitude → Time Zone" else st.session_state.map_lon
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
 
-    # Draw meridians
+    # Draw reference meridians
     for lon_val in range(-180, 181, 30):
         folium.PolyLine([[90, lon_val], [-90, lon_val]], color="gray", weight=1).add_to(m)
+
+    # Draw green line for selected/computed longitude
+    folium.PolyLine(
+        locations=[[90, highlight_lon], [-90, highlight_lon]],
+        color="green",
+        weight=3,
+        opacity=0.7,
+        tooltip=f"Selected/Computed Longitude: {highlight_lon:.4f}°"
+    ).add_to(m)
 
     map_data = st_folium(m, width=700, height=450)
 
