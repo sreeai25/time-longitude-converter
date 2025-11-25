@@ -1,9 +1,10 @@
-# app.py
+# app_final.py
 import streamlit as st
 import pandas as pd
 import math
 import folium
 from streamlit_folium import st_folium
+import io
 
 st.set_page_config(page_title="Time Zone ↔ Longitude Converter", layout="wide")
 
@@ -88,11 +89,12 @@ def update_from_manual_lon():
     st.session_state.active_lon = max(-180.0, min(180.0, lon))
 
 def update_from_manual_time():
+    # Use manual time input directly
     dh = hms_to_decimal_hours(st.session_state.man_tz_sign,
                               st.session_state.man_tz_h,
                               st.session_state.man_tz_m,
                               st.session_state.man_tz_s)
-    dh = max(-12.0, min(12.0, dh))
+    dh = max(-12.0, min(12.0, dh))  # cap ±12h
     lon = hours_to_longitude(dh)
     st.session_state.active_lon = max(-180.0, min(180.0, lon))
 
@@ -190,23 +192,61 @@ if mode == "Longitude → Time Zone":
     st.write(f"Decimal degrees → hours: {dec_deg:.6f} ÷ 15 = {dec_hours:.6f} h")
     st.write(f"Decimal hours → H:M:S = {sign_char}{hh}:{mm}:{ss:.3f}")
 else:
-    dec_hours = longitude_to_hours(lon)
-    sgn_h, hh, mm, ss = decimal_hours_to_hms(dec_hours)
-    deg_from_hours = hours_to_longitude(dec_hours)
-    sgn2, d_deg2, d_min2, d_sec2 = decimal_to_dms(deg_from_hours)
+    # Use manual input for calculation
+    dh_manual = hms_to_decimal_hours(st.session_state.man_tz_sign,
+                                     st.session_state.man_tz_h,
+                                     st.session_state.man_tz_m,
+                                     st.session_state.man_tz_s)
+    dh_capped = max(-12.0, min(12.0, dh_manual))
+    lon_calc = hours_to_longitude(dh_capped)
+    sgn2, d_deg2, d_min2, d_sec2 = decimal_to_dms(lon_calc)
     dir_text2 = "E" if sgn2>=0 else "W"
     st.subheader("Computed Longitude")
     st.write(f"**Longitude:** {d_deg2}° {d_min2}' {d_sec2:.3f}\" {dir_text2}")
     st.markdown("### Explanation")
-    st.write(f"Time → decimal hours: {sgn_h}{hh}+{mm}/60+{ss:.3f}/3600 = {dec_hours:.6f} h")
-    st.write(f"Decimal hours → degrees: {dec_hours:.6f} × 15 = {deg_from_hours:.6f}°")
-    st.write(f"Decimal degrees → D:M:S = {d_deg2}° {d_min2}' {d_sec2:.3f}\"")
+    st.write(f"Time → decimal hours: {st.session_state.man_tz_h} + "
+             f"{st.session_state.man_tz_m}/60 + {st.session_state.man_tz_s}/3600 = {dh_manual:.6f} h")
+    st.write(f"Cap ±12h: {dh_manual:.6f} → {dh_capped:.6f} h")
+    st.write(f"Decimal hours → Longitude: {dh_capped:.6f} × 15 = {lon_calc:.6f}°")
+    st.write(f"Decimal degrees → D:M:S = {d_deg2}° {d_min2}' {d_sec2:.3f}\" {dir_text2}")
 
 # ---------------------------
-# Batch CSV/Excel Upload
+# Batch CSV/Excel Upload with Guidance + Templates
 # ---------------------------
 st.header("Batch CSV / Excel Conversion")
-uploaded = st.file_uploader("Upload file", type=["csv","xlsx"])
+st.markdown("""
+**Upload Instructions:**
+
+- Supported file types: **CSV** or **Excel (.xlsx)**.
+- For **Longitude → Time Zone** conversions, include columns:
+    - `dir` (E/W), `deg` (0–180), `min` (0–59), `sec` (0.0–59.999)
+    - Example row: `E, 45, 30, 0.0`
+- For **Time Zone → Longitude** conversions, include columns:
+    - `sign` (+/-), `h` (0–12), `m` (0–59), `s` (0.0–59.999)
+- Make sure column names **match exactly**.
+- Empty rows or invalid entries will be flagged in the output.
+""")
+
+# Templates
+lon_to_tz_template = pd.DataFrame([{"dir":"E","deg":45,"min":30,"sec":0.0}])
+tz_to_lon_template = pd.DataFrame([{"sign":"+","h":3,"m":30,"s":0.0}])
+
+col1, col2 = st.columns(2)
+with col1:
+    csv_buffer = io.StringIO()
+    lon_to_tz_template.to_csv(csv_buffer, index=False)
+    st.download_button("Download Longitude → Time Zone CSV Template",
+                       csv_buffer.getvalue(),
+                       "lon_to_tz_template.csv","text/csv")
+with col2:
+    csv_buffer2 = io.StringIO()
+    tz_to_lon_template.to_csv(csv_buffer2, index=False)
+    st.download_button("Download Time Zone → Longitude CSV Template",
+                       csv_buffer2.getvalue(),
+                       "tz_to_lon_template.csv","text/csv")
+
+# File uploader
+uploaded = st.file_uploader("Upload your CSV/Excel file", type=["csv","xlsx"])
 if uploaded:
     df = pd.read_csv(uploaded) if uploaded.name.endswith(".csv") else pd.read_excel(uploaded)
     st.dataframe(df.head())
@@ -218,22 +258,16 @@ if uploaded:
                     lon_val = dms_to_decimal(r["dir"], int(r["deg"]), int(r["min"]), float(r["sec"]))
                     dh = longitude_to_hours(lon_val)
                     sgn_h, hh, mm, ss = decimal_hours_to_hms(dh)
-                    results.append({
-                        "input_type":"lon->tz",
-                        "longitude_decimal": lon_val,
-                        "tz_sign": "+" if sgn_h>=0 else "-",
-                        "tz_h": hh, "tz_m": mm, "tz_s": round(ss,3)
-                    })
+                    results.append({"input_type":"lon->tz","longitude_decimal":lon_val,
+                                    "tz_sign":"+" if sgn_h>=0 else "-","tz_h":hh,"tz_m":mm,"tz_s":round(ss,3)})
                 elif {"sign","h","m","s"}.issubset(r.index):
                     dh = hms_to_decimal_hours(r["sign"], int(r["h"]), int(r["m"]), float(r["s"]))
-                    lon_val = hours_to_longitude(dh)
+                    dh_capped = max(-12, min(12, dh))
+                    lon_val = hours_to_longitude(dh_capped)
                     sgn2, d_deg2, d_min2, d_sec2 = decimal_to_dms(lon_val)
-                    results.append({
-                        "input_type":"tz->lon",
-                        "longitude_decimal": lon_val,
-                        "lon_dir": "E" if sgn2>=0 else "W",
-                        "lon_deg": d_deg2, "lon_min": d_min2, "lon_sec": round(d_sec2,3)
-                    })
+                    results.append({"input_type":"tz->lon","longitude_decimal":lon_val,
+                                    "lon_dir":"E" if sgn2>=0 else "W",
+                                    "lon_deg":d_deg2,"lon_min":d_min2,"lon_sec":round(d_sec2,3)})
             except:
                 results.append({"error":"invalid row"})
         st.dataframe(pd.DataFrame(results))
