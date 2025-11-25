@@ -18,7 +18,7 @@ if "map_lon" not in st.session_state:
 if "map_lat" not in st.session_state:
     st.session_state.map_lat = 0.0
 
-# DMS values computed from map click (used as default)
+# DMS values from map click
 if "map_lon_dir" not in st.session_state:
     st.session_state.map_lon_dir = "E (positive)"
 if "map_lon_deg" not in st.session_state:
@@ -28,20 +28,32 @@ if "map_lon_min" not in st.session_state:
 if "map_lon_sec" not in st.session_state:
     st.session_state.map_lon_sec = 0.0
 
-# Store computed longitude in Time Zone → Longitude mode
+# Store computed longitude for highlighting in Time Zone → Longitude mode
 if "computed_lon" not in st.session_state:
     st.session_state.computed_lon = None
 
 # ---------------- FUNCTIONS ----------------
 def update_from_map(lat, lon):
-    """Store map click coordinates and precompute DMS for longitude."""
+    """Update session state with map click and auto-fill longitude fields."""
     st.session_state.map_lat = lat
     st.session_state.map_lon = lon
+
     sgn, d, m, s = decimal_to_dms(lon)
+
+    # Store in map-specific session state
     st.session_state.map_lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
     st.session_state.map_lon_deg = d
     st.session_state.map_lon_min = m
     st.session_state.map_lon_sec = round(s, 6)
+
+    # Update the input widgets directly so they reflect the click
+    st.session_state.lon_dir = st.session_state.map_lon_dir
+    st.session_state.lon_deg = st.session_state.map_lon_deg
+    st.session_state.lon_min = st.session_state.map_lon_min
+    st.session_state.lon_sec = st.session_state.map_lon_sec
+
+    # Also update computed longitude for green line highlighting
+    st.session_state.computed_lon = lon
 
 def compute_decimal_from_dms():
     """Compute decimal longitude from current input fields."""
@@ -66,13 +78,13 @@ st.markdown(
 
 left, right = st.columns([1, 1])
 
-# ---------------- LEFT PANEL: SINGLE CONVERSION ----------------
+# ---------------- LEFT PANEL ----------------
 with left:
     st.header("Single Conversion")
     mode = st.radio("Conversion Direction", ["Longitude → Time Zone", "Time Zone → Longitude"])
 
     if mode == "Longitude → Time Zone":
-        st.subheader("Enter Longitude (DMS)")
+        st.subheader("Enter Longitude (D:M:S)")
 
         lon_dir = st.selectbox(
             "Direction",
@@ -156,10 +168,11 @@ with right:
     st.header("Interactive Map")
 
     # Determine the longitude to highlight
-    if mode == "Longitude → Time Zone":
-        highlight_lon = compute_decimal_from_dms()
-    else:
-        highlight_lon = st.session_state.computed_lon if st.session_state.computed_lon is not None else st.session_state.map_lon
+    highlight_lon = (
+        st.session_state.computed_lon
+        if st.session_state.computed_lon is not None
+        else st.session_state.map_lon
+    )
 
     # Map center
     center_lon = highlight_lon
@@ -167,11 +180,11 @@ with right:
 
     m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
 
-    # Draw reference meridians
+    # Draw gray meridians for reference
     for lon_val in range(-180, 181, 30):
         folium.PolyLine([[90, lon_val], [-90, lon_val]], color="gray", weight=1).add_to(m)
 
-    # Draw green line for selected/computed longitude
+    # Draw green line for current selected/computed longitude
     folium.PolyLine(
         locations=[[90, highlight_lon], [-90, highlight_lon]],
         color="green",
