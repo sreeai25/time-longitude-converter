@@ -12,20 +12,17 @@ import folium
 st.set_page_config(page_title="Time Zone ↔ Longitude", layout="wide")
 
 # ---------------- SESSION STATE ----------------
-if "map_lon" not in st.session_state:
-    st.session_state.map_lon = 0.0
-if "map_lat" not in st.session_state:
-    st.session_state.map_lat = 0.0
-if "map_lon_dir" not in st.session_state:
-    st.session_state.map_lon_dir = "E (positive)"
-if "map_lon_deg" not in st.session_state:
-    st.session_state.map_lon_deg = 0
-if "map_lon_min" not in st.session_state:
-    st.session_state.map_lon_min = 0
-if "map_lon_sec" not in st.session_state:
-    st.session_state.map_lon_sec = 0.0
-if "computed_lon" not in st.session_state:
-    st.session_state.computed_lon = None
+for key, default in [
+    ("clicked_lon", None),
+    ("clicked_lat", 0.0),
+    ("computed_lon", None),
+    ("lon_dir", "E (positive)"),
+    ("lon_deg", 0),
+    ("lon_min", 0),
+    ("lon_sec", 0.0),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # ---------------- FUNCTIONS ----------------
 def compute_decimal_from_dms():
@@ -60,34 +57,42 @@ with left:
     st.header("Single Conversion")
     mode = st.radio("Conversion Direction", ["Longitude → Time Zone", "Time Zone → Longitude"])
 
+    # ---------------- Auto-fill from map click ----------------
+    if st.session_state.clicked_lon is not None:
+        sgn, d, m_val, s_val = decimal_to_dms(st.session_state.clicked_lon)
+        st.session_state.lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
+        st.session_state.lon_deg = d
+        st.session_state.lon_min = m_val
+        st.session_state.lon_sec = round(s_val, 6)
+
     if mode == "Longitude → Time Zone":
         st.subheader("Enter Longitude (D:M:S)")
 
         lon_dir = st.selectbox(
             "Direction",
             ["E (positive)", "W (negative)"],
-            index=["E (positive)", "W (negative)"].index(st.session_state.map_lon_dir),
+            index=["E (positive)", "W (negative)"].index(st.session_state.lon_dir),
             key="lon_dir"
         )
         deg = st.number_input(
             "Degrees",
             min_value=0,
             max_value=180,
-            value=st.session_state.map_lon_deg,
+            value=st.session_state.lon_deg,
             key="lon_deg"
         )
         minu = st.number_input(
             "Minutes",
             min_value=0,
             max_value=59,
-            value=st.session_state.map_lon_min,
+            value=st.session_state.lon_min,
             key="lon_min"
         )
         sec = st.number_input(
             "Seconds",
             min_value=0.0,
             max_value=59.999,
-            value=st.session_state.map_lon_sec,
+            value=st.session_state.lon_sec,
             key="lon_sec",
             format="%.6f"
         )
@@ -100,13 +105,9 @@ with left:
             st.success(f"Time Zone: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
 
             st.markdown("### Explanation")
-            st.write(f"**Step 1: Convert D:M:S → Decimal Degrees**")
             st.write(f"Decimal Degrees = {deg} + ({minu}/60) + ({sec}/3600) = {dec_lon:.6f}°")
-            st.write(f"**Step 2: Decimal Degrees → Time Zone (hours)**")
-            st.write(f"Time offset = {dec_lon:.6f}/15 = {tz_hours:.6f} h")
-            st.write(f"**Step 3: Decimal Hours → H:M:S**")
-            st.write(f"H = {h}, M = {m}, S = {s:.3f}")
-            st.write(f"Result: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
+            st.write(f"Time Zone (hours) = {dec_lon:.6f}/15 = {tz_hours:.6f} h")
+            st.write(f"H:M:S = {h}:{m}:{s:.3f}")
 
     else:
         st.subheader("Enter Time Zone Offset")
@@ -124,21 +125,19 @@ with left:
             st.success(f"Longitude: {dir_char} {d}° {m_val}' {s_val:.3f}\"")
 
             st.markdown("### Explanation")
-            st.write(f"**Step 1: Convert H:M:S → Decimal Hours**")
             st.write(f"Decimal Hours = {tz_h} + ({tz_m}/60) + ({tz_s}/3600) = {dec_hours:.6f} h")
-            st.write(f"**Step 2: Decimal Hours → Longitude**")
             st.write(f"Longitude = {dec_hours:.6f} * 15 = {lon:.6f}°")
-            st.write(f"**Step 3: Decimal Degrees → D:M:S**")
-            st.write(f"D = {d}, M = {m_val}, S = {s_val:.3f}")
-            st.write(f"Result: {dir_char} {d}° {m_val}' {s_val:.3f}\"")
+            st.write(f"D:M:S = {d}:{m_val}:{s_val:.3f}")
 
 # ---------------- RIGHT PANEL ----------------
 with right:
     st.header("Interactive Map")
 
-    highlight_lon = st.session_state.computed_lon if st.session_state.computed_lon is not None else st.session_state.map_lon
+    # Highlight either computed longitude or last clicked longitude
+    highlight_lon = st.session_state.computed_lon if st.session_state.computed_lon is not None else st.session_state.clicked_lon or 0.0
+    highlight_lat = st.session_state.clicked_lat or 0.0
 
-    m = folium.Map(location=[st.session_state.map_lat, highlight_lon], zoom_start=4)
+    m = folium.Map(location=[highlight_lat, highlight_lon], zoom_start=4)
 
     # Gray meridians
     for lon_val in range(-180, 181, 30):
@@ -155,33 +154,14 @@ with right:
 
     map_data = st_folium(m, width=700, height=450)
 
-    # ---------------- Map click auto-fill ----------------
+    # ---------------- Map click updates ----------------
     if map_data and map_data.get("last_clicked"):
-        lat = map_data["last_clicked"]["lat"]
-        lon = map_data["last_clicked"]["lng"]
-        sgn, d, m_val, s_val = decimal_to_dms(lon)
-
-        # Update map session state
-        st.session_state.map_lat = lat
-        st.session_state.map_lon = lon
-        st.session_state.map_lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
-        st.session_state.map_lon_deg = d
-        st.session_state.map_lon_min = m_val
-        st.session_state.map_lon_sec = round(s_val, 6)
-
-        # ---------------- FORCE auto-fill into input widgets ----------------
-        for key, val in [
-            ("lon_deg", st.session_state.map_lon_deg),
-            ("lon_min", st.session_state.map_lon_min),
-            ("lon_sec", st.session_state.map_lon_sec),
-            ("lon_dir", st.session_state.map_lon_dir),
-        ]:
-            st.session_state[key] = val
-
-        st.experimental_rerun()  # force rerun so inputs reflect map click
+        st.session_state.clicked_lon = map_data["last_clicked"]["lng"]
+        st.session_state.clicked_lat = map_data["last_clicked"]["lat"]
+        st.experimental_rerun()
 
     # Display clicked coordinates
     st.markdown(
-        f"**Last Map Click:** Latitude = {st.session_state.map_lat:.6f}°, "
-        f"Longitude = {st.session_state.map_lon:.6f}°"
+        f"**Last Map Click:** Latitude = {st.session_state.clicked_lat:.6f}°, "
+        f"Longitude = {st.session_state.clicked_lon if st.session_state.clicked_lon is not None else 0.0:.6f}°"
     )
