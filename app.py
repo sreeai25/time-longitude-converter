@@ -65,15 +65,18 @@ with left:
     # ---------------- Longitude → Time Zone ----------------
     if mode == "Longitude → Time Zone":
         st.subheader("Enter Longitude (D:M:S)")
-        lon_dir = st.selectbox(
-            "Direction",
-            ["E (positive)","W (negative)"],
-            index=["E (positive)","W (negative)"].index(st.session_state.get("lon_dir","E (positive)")),
-            key="lon_dir"
-        )
-        deg = st.number_input("Degrees", 0, 180, value=st.session_state.get("lon_deg",0), key="lon_deg")
-        minu = st.number_input("Minutes", 0, 59, value=st.session_state.get("lon_min",0), key="lon_min")
-        sec = st.number_input("Seconds", 0.0, 59.999, value=st.session_state.get("lon_sec",0.0), key="lon_sec", format="%.6f")
+
+        # Read defaults from session state safely
+        lon_dir_default = st.session_state.get("lon_dir", "E (positive)")
+        lon_deg_default = st.session_state.get("lon_deg", 0)
+        lon_min_default = st.session_state.get("lon_min", 0)
+        lon_sec_default = st.session_state.get("lon_sec", 0.0)
+
+        # Widget creation
+        lon_dir = st.selectbox("Direction", ["E (positive)", "W (negative)"], index=["E (positive)", "W (negative)"].index(lon_dir_default), key="lon_dir")
+        deg = st.number_input("Degrees", 0, 180, value=lon_deg_default, key="lon_deg")
+        minu = st.number_input("Minutes", 0, 59, value=lon_min_default, key="lon_min")
+        sec = st.number_input("Seconds", 0.0, 59.999, value=lon_sec_default, key="lon_sec", format="%.6f")
 
         if st.button("Compute Time Zone"):
             sign = 1 if lon_dir.startswith("E") else -1
@@ -81,25 +84,23 @@ with left:
             tz_hours = dec_deg / 15
             sgn_tz, h, m, s = tz_hours_to_hms(tz_hours)
             sign_char = "+" if sgn_tz>=0 else "-"
-
             st.success(f"Time Zone: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
 
             st.markdown("### Step-by-Step Explanation")
             st.write(f"**Step 1:** Convert D:M:S → Decimal Degrees = {deg} + {minu}/60 + {sec}/3600 = {dec_deg:.6f}°")
             st.write(f"**Step 2:** Decimal Degrees → Time Zone (hours) = {dec_deg:.6f} / 15 = {tz_hours:.6f} h")
-            hours = int(tz_hours)
-            minutes = int(abs(tz_hours - hours)*60)
-            seconds = (abs(tz_hours - hours)*60 - minutes)*60
-            st.write(f"**Step 3:** Decimal Hours → H:M:S = {hours}:{minutes}:{seconds:.3f}")
+            st.write(f"**Step 3:** Decimal Hours → H:M:S = {h}:{m}:{s:.3f}")
 
     # ---------------- Time Zone → Longitude ----------------
     else:
         st.subheader("Enter Time Zone Offset")
         st.checkbox("Auto-update time from map click", value=True, key="tz_sign_auto")
+
         tz_sign = st.selectbox("Sign", ["+","-"], index=["+","-"].index(st.session_state.get("tz_sign","+")), key="tz_sign")
         tz_h = st.number_input("Hours", 0, 12, value=st.session_state.get("tz_h",0), key="tz_h")
         tz_m = st.number_input("Minutes",0,59,value=st.session_state.get("tz_m",0),key="tz_m")
         tz_s = st.number_input("Seconds",0.0,59.999,value=st.session_state.get("tz_s",0.0),key="tz_s")
+        
         if st.button("Compute Longitude"):
             sign_val = 1 if tz_sign=="+" else -1
             dec_hours = hms_to_decimal_hours(tz_h, tz_m, tz_s, sign_val)
@@ -156,44 +157,49 @@ with right:
     highlight_lat = float(st.session_state.get("clicked_lat") or 0.0)
 
     m = folium.Map(location=[highlight_lat, highlight_lon], zoom_start=4)
+
     # Gray meridians
     for lon_val in range(-180, 181, 30):
         folium.PolyLine([[90, lon_val], [-90, lon_val]], color="gray", weight=1).add_to(m)
+    
     # Green line
-    folium.PolyLine([[90, highlight_lon], [-90, highlight_lon]], color="green", weight=3, opacity=0.7, tooltip=f"Longitude: {highlight_lon:.4f}°").add_to(m)
+    folium.PolyLine([[90, highlight_lon], [-90, highlight_lon]], color="green", weight=3, opacity=0.7).add_to(m)
 
     # Slider for green line
     slider_lon = st.slider("Move Green Longitude Line", -180.0, 180.0, value=highlight_lon, step=0.1)
     highlight_lon = slider_lon
-
-    # Update session state safely
     st.session_state["clicked_lon"] = highlight_lon
+
+    # Update inputs safely
     if mode=="Longitude → Time Zone":
         sgn, d, m_val, s_val = decimal_to_dms(highlight_lon)
-        st.session_state["lon_dir"] = "E (positive)" if sgn>=0 else "W (negative)"
-        st.session_state["lon_deg"] = d
-        st.session_state["lon_min"] = m_val
-        st.session_state["lon_sec"] = round(s_val,6)
+        st.session_state.update({
+            "lon_dir": "E (positive)" if sgn>=0 else "W (negative)",
+            "lon_deg": d,
+            "lon_min": m_val,
+            "lon_sec": round(s_val,6)
+        })
     elif mode=="Time Zone → Longitude" and st.session_state.tz_sign_auto:
         dec_hours = highlight_lon / 15
         sgn, h, m, s = tz_hours_to_hms(dec_hours)
-        st.session_state["tz_sign"] = "+" if sgn>=0 else "-"
-        st.session_state["tz_h"] = h
-        st.session_state["tz_m"] = m
-        st.session_state["tz_s"] = s
+        st.session_state.update({
+            "tz_sign": "+" if sgn>=0 else "-",
+            "tz_h": h,
+            "tz_m": m,
+            "tz_s": s
+        })
 
-    # Add green line for slider
+    # Re-add green line after slider
     folium.PolyLine([[90, highlight_lon], [-90, highlight_lon]], color="green", weight=3, opacity=0.7).add_to(m)
 
     # Render map
     map_data = st_folium(m, width=700, height=450)
 
-    # Handle map clicks
+    # Handle map clicks safely
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
-        st.session_state["clicked_lat"] = lat
-        st.session_state["clicked_lon"] = lon
+        st.session_state.update({"clicked_lat": lat, "clicked_lon": lon})
         st.experimental_rerun()
 
     st.markdown(f"**Last Map Click:** Latitude={st.session_state.clicked_lat:.6f}°, Longitude={st.session_state.clicked_lon:.6f}°")
