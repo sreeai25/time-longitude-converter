@@ -25,7 +25,7 @@ for key, default in [
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
-@@ -94,12 +95,16 @@
+
             st.markdown("### Explanation")
             st.write(f"**Step 1: Convert D:M:S → Decimal Degrees:** {deg} + {minu}/60 + {sec}/3600 = {dec_deg:.6f}°")
             st.write(f"**Step 2: Decimal Degrees → Time Zone (hours):** {dec_deg:.6f}/15 = {tz_hours:.6f} h")
@@ -44,7 +44,7 @@ for key, default in [
         tz_m = st.number_input("Minutes",0,59,key="tz_m")
         tz_s = st.number_input("Seconds",0.0,59.999,key="tz_s")
         if st.button("Compute Longitude"):
-@@ -110,6 +115,7 @@
+
             st.markdown("### Explanation")
             st.write(f"**Step 1: Convert H:M:S → Decimal Hours:** {tz_h} + {tz_m}/60 + {tz_s}/3600 = {dec_hours:.6f} h")
             st.write(f"**Step 2: Decimal Hours → Longitude:** {dec_hours:.6f} * 15 = {lon:.6f}°")
@@ -52,7 +52,7 @@ for key, default in [
             st.write(f"**Step 3: Decimal Degrees → D:M:S:** {d}° {m_val}' {s_val:.3f}\"")
 
     # ---------------- Batch Upload ----------------
-@@ -155,8 +161,8 @@
+
 with right:
     st.header("Interactive Map")
     # green line uses computed_lon if exists else clicked_lon
@@ -63,7 +63,7 @@ with right:
 
     m = folium.Map(location=[highlight_lat, highlight_lon], zoom_start=4)
 
-@@ -169,11 +175,27 @@
+
                     color="green",weight=3,opacity=0.7,
                     tooltip=f"Selected/Computed Longitude: {highlight_lon:.4f}°").add_to(m)
 
@@ -94,7 +94,7 @@ with right:
 
     map_data = st_folium(m,width=700,height=450)
 
-@@ -183,8 +205,8 @@
+
         lon = map_data["last_clicked"]["lng"]
         st.session_state.clicked_lat = lat
         st.session_state.clicked_lon = lon
