@@ -25,7 +25,7 @@ for key, default in [
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
-            st.markdown("### Explanation")
+        st.markdown("### Explanation")
             st.write(f"**Step 1: Convert D:M:S → Decimal Degrees:** {deg} + {minu}/60 + {sec}/3600 = {dec_deg:.6f}°")
             st.write(f"**Step 2: Decimal Degrees → Time Zone (hours):** {dec_deg:.6f}/15 = {tz_hours:.6f} h")
             st.write(f"**Step 3: Decimal Hours → H:M:S:** {h}:{m}:{s:.3f}")
@@ -43,7 +43,7 @@ for key, default in [
         tz_m = st.number_input("Minutes",0,59,key="tz_m")
         tz_s = st.number_input("Seconds",0.0,59.999,key="tz_s")
         if st.button("Compute Longitude"):
-            st.markdown("### Explanation")
+           st.markdown("### Explanation")
             st.write(f"**Step 1: Convert H:M:S → Decimal Hours:** {tz_h} + {tz_m}/60 + {tz_s}/3600 = {dec_hours:.6f} h")
             st.write(f"**Step 2: Decimal Hours → Longitude:** {dec_hours:.6f} * 15 = {lon:.6f}°")
             sgn, d, m_val, s_val = decimal_to_dms(lon)
