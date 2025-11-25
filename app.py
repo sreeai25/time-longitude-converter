@@ -7,143 +7,164 @@ from utils import (
     longitude_from_timezone_hours,
 )
 import pandas as pd
-import matplotlib.pyplot as plt
 from streamlit_folium import st_folium
 import folium
-import io
 
 st.set_page_config(page_title="Time Zone ↔ Longitude", layout="wide")
 
-# Session state for map clicks
+# ---------------- SESSION STATE ----------------
 if "map_lon" not in st.session_state:
-    st.session_state.map_lon = None
+    st.session_state.map_lon = 0.0
 if "map_lat" not in st.session_state:
-    st.session_state.map_lat = None
+    st.session_state.map_lat = 0.0
 
+# For storing DMS computed from map click
+if "map_lon_dir" not in st.session_state:
+    st.session_state.map_lon_dir = "E (positive)"
+if "map_lon_deg" not in st.session_state:
+    st.session_state.map_lon_deg = 0
+if "map_lon_min" not in st.session_state:
+    st.session_state.map_lon_min = 0
+if "map_lon_sec" not in st.session_state:
+    st.session_state.map_lon_sec = 0.0
+
+# ---------------- FUNCTIONS ----------------
 def update_from_map(lat, lon):
-    """Auto-fill the left panel from map click."""
+    """Store map click coordinates and DMS for longitude safely."""
     st.session_state.map_lat = lat
     st.session_state.map_lon = lon
-
-    # Convert longitude to DMS
     sgn, d, m, s = decimal_to_dms(lon)
-    st.session_state.lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
-    st.session_state.lon_deg = d
-    st.session_state.lon_min = m
-    st.session_state.lon_sec = float(f"{s:.6f}")
+    st.session_state.map_lon_dir = "E (positive)" if sgn >= 0 else "W (negative)"
+    st.session_state.map_lon_deg = d
+    st.session_state.map_lon_min = m
+    st.session_state.map_lon_sec = round(s, 6)
 
+def compute_decimal_from_dms():
+    """Compute decimal longitude from current input fields."""
+    sign = 1 if st.session_state.lon_dir.startswith("E") else -1
+    return dms_to_decimal(
+        st.session_state.lon_deg, st.session_state.lon_min, st.session_state.lon_sec, sign
+    )
+
+def compute_decimal_hours():
+    """Compute decimal hours from time zone input fields."""
+    sign = 1 if st.session_state.tz_sign == "+" else -1
+    return hms_to_decimal_hours(
+        st.session_state.tz_h, st.session_state.tz_m, st.session_state.tz_s, sign
+    )
+
+# ---------------- APP LAYOUT ----------------
 st.title("🕰️ 🌍 Time Zone ↔ Longitude Calculator")
-
 st.markdown(
-"""
-This app converts **longitude ↔ time zone offset**, with map clicking, CSV batch processing, 
-and educational explanations.
-"""
+    "Convert **longitude ↔ time zone offset**, click on the map to auto-fill values, "
+    "and see detailed step-by-step explanations."
 )
 
-# ---------------- Layout -----------------
-left, right = st.columns(2)
+left, right = st.columns([1, 1])
 
-# ------------ LEFT COLUMN (Calculator) --------------
+# ---------------- LEFT PANEL: SINGLE CONVERSION ----------------
 with left:
-    st.markdown("## 🧮 Single Conversion")
-
-    with st.container():
-        st.markdown("### Mode Selection")
-        mode = st.radio("Choose conversion:", ["Longitude → Time Zone", "Time Zone → Longitude"])
+    st.header("Single Conversion")
+    mode = st.radio("Conversion Direction", ["Longitude → Time Zone", "Time Zone → Longitude"])
 
     if mode == "Longitude → Time Zone":
-        st.markdown("### 📌 Enter Longitude (or click on map)")
+        st.subheader("Enter Longitude (DMS)")
 
         lon_dir = st.selectbox(
-            "Direction", ["E (positive)", "W (negative)"], key="lon_dir"
+            "Direction",
+            ["E (positive)", "W (negative)"],
+            key="lon_dir",
+            index=["E (positive)", "W (negative")].index(
+                st.session_state.get("map_lon_dir", "E (positive)")
+            ),
         )
-        deg = st.number_input("Degrees", min_value=0, max_value=180, step=1, key="lon_deg")
-        minu = st.number_input("Minutes", min_value=0, max_value=59, step=1, key="lon_min")
-        sec = st.number_input("Seconds", min_value=0.0, max_value=59.999, format="%.6f", key="lon_sec")
+        deg = st.number_input(
+            "Degrees",
+            min_value=0,
+            max_value=180,
+            value=st.session_state.get("map_lon_deg", 0),
+            key="lon_deg",
+        )
+        minu = st.number_input(
+            "Minutes",
+            min_value=0,
+            max_value=59,
+            value=st.session_state.get("map_lon_min", 0),
+            key="lon_min",
+        )
+        sec = st.number_input(
+            "Seconds",
+            min_value=0.0,
+            max_value=59.999,
+            value=st.session_state.get("map_lon_sec", 0.0),
+            key="lon_sec",
+            format="%.6f",
+        )
 
-        if st.button("Compute Time Zone", use_container_width=True):
-            sign = 1 if lon_dir.startswith("E") else -1
-            dec_lon = dms_to_decimal(deg, minu, sec, sign)
-            tz = dec_lon / 15
-
-            sgn, h, m, s = tz_hours_to_hms(tz)
+        if st.button("Compute Time Zone"):
+            dec_lon = compute_decimal_from_dms()
+            tz_hours = dec_lon / 15
+            sgn, h, m, s = tz_hours_to_hms(tz_hours)
             sign_char = "+" if sgn >= 0 else "-"
 
-            st.success(f"Computed Time Zone: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
+            st.success(f"Time Zone: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
 
             st.markdown("### Explanation")
-            st.write(f"1. Decimal longitude = {dec_lon:.6f}°")
-            st.write(f"2. Divide by 15°/hour → Time = {tz:.6f} h")
-            st.write(f"3. Converted to H:M:S → {sign_char}{h}:{m}:{s:.3f}")
+            st.write(f"**Step 1: Convert DMS → Decimal Degrees**")
+            st.write(
+                f"Decimal Degrees = degrees + (minutes / 60) + (seconds / 3600)\n"
+                f"= {deg} + ({minu}/60) + ({sec}/3600)\n"
+                f"= {dec_lon:.6f}°"
+            )
+            st.write("**Step 2: Decimal Degrees → Time Zone (hours)**")
+            st.write(f"Time offset = decimal longitude / 15\n= {dec_lon:.6f}/15 = {tz_hours:.6f} h")
+            st.write("**Step 3: Decimal Hours → H:M:S**")
+            st.write(f"H = {h}, M = {m}, S = {s:.3f}")
+            st.write(f"Result: {sign_char}{h:02d}:{m:02d}:{s:06.3f}")
 
     else:
-        st.markdown("### 📌 Enter Time Zone Offset")
+        st.subheader("Enter Time Zone Offset")
+        tz_sign = st.selectbox("Sign", ["+", "-"], key="tz_sign")
+        tz_h = st.number_input("Hours", min_value=0, max_value=18, key="tz_h")
+        tz_m = st.number_input("Minutes", min_value=0, max_value=59, key="tz_m")
+        tz_s = st.number_input("Seconds", min_value=0.0, max_value=59.999, key="tz_s")
 
-        tz_sign = st.selectbox("Sign", ["+", "-"])
-        tz_h = st.number_input("Hours", min_value=0, max_value=18)
-        tz_m = st.number_input("Minutes", min_value=0, max_value=59)
-        tz_s = st.number_input("Seconds", min_value=0.0, max_value=59.999)
-
-        if st.button("Compute Longitude", use_container_width=True):
-            dec_hours = hms_to_decimal_hours(tz_h, tz_m, tz_s, 1 if tz_sign == "+" else -1)
+        if st.button("Compute Longitude"):
+            dec_hours = compute_decimal_hours()
             lon = longitude_from_timezone_hours(dec_hours)
-
             sgn, d, m, s = decimal_to_dms(lon)
-            dir = "E" if sgn >= 0 else "W"
-
-            st.success(f"Longitude = {dir} {d}° {m}' {s:.3f}\"")
+            dir_char = "E" if sgn >= 0 else "W"
+            st.success(f"Longitude: {dir_char} {d}° {m}' {s:.3f}\"")
 
             st.markdown("### Explanation")
-            st.write(f"1. Decimal hours = {dec_hours:.6f}")
-            st.write(f"2. ×15° gives longitude = {lon:.6f}°")
-            st.write(f"3. Converted to DMS → {dir} {d}° {m}' {s:.3f}\"")
+            st.write("**Step 1: Convert H:M:S → Decimal Hours**")
+            st.write(f"Decimal Hours = hours + (minutes / 60) + (seconds / 3600)")
+            st.write(f"= {tz_h} + ({tz_m}/60) + ({tz_s}/3600) = {dec_hours:.6f} h")
+            st.write("**Step 2: Decimal Hours → Longitude (Decimal Degrees)**")
+            st.write(f"Longitude = decimal hours × 15 = {lon:.6f}°")
+            st.write("**Step 3: Decimal Degrees → D:M:S**")
+            st.write(f"D = {d}, M = {m}, S = {s:.3f}")
+            st.write(f"Result: {dir_char} {d}° {m}' {s:.3f}\"")
 
-# ----------------- RIGHT COLUMN (Map & CSV) ------------------
+# ---------------- RIGHT PANEL: MAP ----------------
 with right:
-    st.markdown("## 🗺️ Interactive Map")
+    st.header("Interactive Map")
 
-    m = folium.Map(location=[0, 0], zoom_start=2)
+    # Determine center: if user entered longitude manually, zoom to it
+    center_lat = st.session_state.map_lat
+    center_lon = compute_decimal_from_dms() if mode=="Longitude → Time Zone" else st.session_state.map_lon
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=4)
 
     # Draw meridians
-    for lon in range(-180, 181, 30):
-        folium.PolyLine([[90, lon], [-90, lon]], color="gray", weight=1).add_to(m)
+    for lon_val in range(-180, 181, 30):
+        folium.PolyLine([[90, lon_val], [-90, lon_val]], color="gray", weight=1).add_to(m)
 
     map_data = st_folium(m, width=700, height=450)
 
+    # Update map click coordinates
     if map_data and map_data.get("last_clicked"):
         lat = map_data["last_clicked"]["lat"]
         lon = map_data["last_clicked"]["lng"]
         update_from_map(lat, lon)
-        st.success(f"Selected: Latitude {lat:.4f}°, Longitude {lon:.4f}°")
-
-    st.markdown("---")
-    st.markdown("## 📦 Batch CSV Conversion")
-
-    file = st.file_uploader("Upload CSV", type=["csv"])
-
-    if file:
-        df = pd.read_csv(file)
-        st.dataframe(df.head())
-
-        if set(["deg", "min", "sec", "dir"]).issubset(df.columns):
-            results = []
-            for _, r in df.iterrows():
-                sign = 1 if r["dir"].upper().startswith("E") else -1
-                dec = dms_to_decimal(r.deg, r.min, r.sec, sign)
-                tz = dec / 15
-                sgn, h, m, s = tz_hours_to_hms(tz)
-                results.append(f"{'+' if sgn>=0 else '-'}{h:02d}:{m:02d}:{s:05.2f}")
-            df["tz"] = results
-
-        elif set(["tz_sign", "h", "m", "s"]).issubset(df.columns):
-            results = []
-            for _, r in df.iterrows():
-                hours = hms_to_decimal_hours(r.h, r.m, r.s, 1 if r.tz_sign == "+" else -1)
-                lon = longitude_from_timezone_hours(hours)
-                sgn, d, m, s = decimal_to_dms(lon)
-                results.append(f"{'E' if sgn>=0 else 'W'} {d}° {m}' {s:05.2f}\"")
-            df["longitude"] = results
-
-        st.dataframe(df)
-        st.download_button("Download Results", df.to_csv(index=False), file_name="results.csv")
+        st.success(f"Map clicked: Latitude {lat:.4f}°, Longitude {lon:.4f}°")
