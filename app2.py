@@ -1,18 +1,18 @@
 import streamlit as st
 import pandas as pd
-import math
 import folium
 from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Time Zone ↔ Longitude", layout="wide")
 
 # ======================================================
-# 🟩 Conversion Functions (self-contained – no utils.py)
+# Conversion Utilities
 # ======================================================
 
 def dms_to_decimal(deg, minutes, seconds, direction):
     sign = 1 if direction.startswith("E") else -1
-    return sign * (abs(deg) + minutes/60 + seconds/3600)
+    value = abs(deg) + minutes/60 + seconds/3600
+    return sign * value
 
 def decimal_to_dms(decimal_value):
     sign = 1 if decimal_value >= 0 else -1
@@ -23,8 +23,8 @@ def decimal_to_dms(decimal_value):
     return sign, d, m, s
 
 def hms_to_decimal_hours(h, m, s, sign):
-    base = abs(h) + m/60 + s/3600
-    return base if sign == "+" else -base
+    total = abs(h) + m/60 + s/3600
+    return total if sign == "+" else -total
 
 def decimal_hours_to_hms(hours_value):
     sign = "+" if hours_value >= 0 else "-"
@@ -34,18 +34,16 @@ def decimal_hours_to_hms(hours_value):
     s = (value - h - m/60) * 3600
     return sign, h, m, s
 
-def longitude_from_tz(decimal_hours):
-    return decimal_hours * 15
+def longitude_from_tz(hours_value):
+    return hours_value * 15
 
 # ======================================================
 # Session State Defaults
 # ======================================================
 
 defaults = {
-    "clicked_lon": 0.0,
+    "active_lon": 0.0,     # master longitude (slider/map/manual synced)
     "clicked_lat": 0.0,
-    "manual_lon": 0.0,
-    "computed_lon": 0.0,
     "mode": "Longitude → Time Zone",
 }
 
@@ -59,135 +57,125 @@ for k, v in defaults.items():
 
 st.sidebar.header("Mode")
 st.session_state.mode = st.sidebar.radio(
-    "Select conversion direction",
+    "Select Direction",
     ["Longitude → Time Zone", "Time Zone → Longitude"]
 )
 
-st.sidebar.divider()
-st.sidebar.header("Manual Input")
+st.sidebar.markdown("### Manual Input")
 
+# Manual input synced to master longitude
 if st.session_state.mode == "Longitude → Time Zone":
-    lon_direction = st.sidebar.selectbox("Direction", ["E (+)", "W (-)"])
-    lon_deg = st.sidebar.number_input("Degrees", -180, 180, 0)
-    lon_min = st.sidebar.number_input("Minutes", 0, 59, 0)
-    lon_sec = st.sidebar.number_input("Seconds", 0.0, 59.999, 0.0)
-    if st.sidebar.button("Compute Time Zone"):
-        st.session_state.manual_lon = dms_to_decimal(lon_deg, lon_min, lon_sec, lon_direction)
+    dir_val = st.sidebar.selectbox("Direction", ["E (+)", "W (-)"])
+    lon_deg = st.sidebar.number_input("Degrees (±180°)", -180, 180, value=0)
+    lon_min = st.sidebar.number_input("Minutes", 0, 59, value=0)
+    lon_sec = st.sidebar.number_input("Seconds", 0.0, 59.999, value=0.0)
+
+    if st.sidebar.button("Apply Longitude"):
+        st.session_state.active_lon = dms_to_decimal(lon_deg, lon_min, lon_sec, dir_val)
 
 else:
     tz_sign = st.sidebar.selectbox("Sign", ["+", "-"])
-    tz_h = st.sidebar.number_input("Hours", 0, 18, 0)
-    tz_m = st.sidebar.number_input("Minutes", 0, 59, 0)
-    tz_s = st.sidebar.number_input("Seconds", 0.0, 59.999, 0.0)
+    tz_h = st.sidebar.number_input("Hours (±12)", 0, 12, value=0)
+    tz_m = st.sidebar.number_input("Minutes", 0, 59, value=0)
+    tz_s = st.sidebar.number_input("Seconds", 0.0, 59.999, value=0.0)
 
-    if st.sidebar.button("Compute Longitude"):
-        dec_hours = hms_to_decimal_hours(tz_h, tz_m, tz_s, tz_sign)
-        st.session_state.manual_lon = longitude_from_tz(dec_hours)
-
-# ======================================================
-# Layout
-# ======================================================
-
-left, right = st.columns([1, 1])
+    if st.sidebar.button("Apply Time Zone"):
+        hours_dec = hms_to_decimal_hours(tz_h, tz_m, tz_s, tz_sign)
+        st.session_state.active_lon = longitude_from_tz(hours_dec)
 
 # ======================================================
-# LEFT PANEL – Map + Slider
+# Main Layout
 # ======================================================
 
-with left:
-    st.header("Interactive Map")
+st.header("Interactive Longitude & Time Zone Converter")
 
-    # current longitude = last map click OR manual OR computed
-    active_lon = st.session_state.manual_lon or st.session_state.clicked_lon
+# ---------------- MAP ----------------
 
-    # Map creation
-    m = folium.Map(location=[st.session_state.clicked_lat, active_lon], zoom_start=3)
+st.markdown("## Interactive Map")
 
-    # Green longitude line
-    folium.PolyLine([[90, active_lon], [-90, active_lon]],
-                    color="green", weight=4).add_to(m)
+m = folium.Map(location=[st.session_state.clicked_lat, st.session_state.active_lon], zoom_start=3)
 
-    map_data = st_folium(m, height=450, width=600)
+# green longitude line
+folium.PolyLine([[90, st.session_state.active_lon], [-90, st.session_state.active_lon]],
+                color="green", weight=4).add_to(m)
 
-    # Map click updates
-    if map_data and map_data.get("last_clicked"):
-        st.session_state.clicked_lat = map_data["last_clicked"]["lat"]
-        st.session_state.clicked_lon = map_data["last_clicked"]["lng"]
-        active_lon = st.session_state.clicked_lon
+map_data = st_folium(m, height=500, width=1000)
 
-    st.write(f"### Selected Longitude: **{active_lon:.6f}°**")
+# map click sync
+if map_data and map_data.get("last_clicked"):
+    st.session_state.clicked_lat = map_data["last_clicked"]["lat"]
+    st.session_state.active_lon = map_data["last_clicked"]["lng"]
 
-    # Slider with pointy-hand cursor
-    st.markdown(
-        """
-        <style>
-        .stSlider > div > div > div > div {
-            cursor: pointer;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+# ---------------- SLIDER ----------------
 
-    slider_lon = st.slider("Slide to adjust longitude", -180.0, 180.0, active_lon, 0.1)
-    active_lon = slider_lon
+st.markdown("### Adjust Longitude")
+
+# slider sync
+slider_val = st.slider(
+    "Drag to modify longitude",
+    min_value=-180.0, max_value=180.0,
+    value=float(st.session_state.active_lon),
+    step=0.1
+)
+
+st.session_state.active_lon = slider_val
+
+st.markdown(f"### Selected Longitude: **{st.session_state.active_lon:.6f}°**")
 
 # ======================================================
-# RIGHT PANEL – Conversion Output + Explanation
-# ======================================================
-
-with right:
-    st.header("Calculation Output")
-
-    if st.session_state.mode == "Longitude → Time Zone":
-        sign, d, m, s = decimal_to_dms(active_lon)
-        dec_hours = active_lon / 15
-        h_sign, hh, mm, ss = decimal_hours_to_hms(dec_hours)
-
-        st.subheader("Result")
-        st.write(f"**Longitude:** {active_lon:.6f}°")
-        st.write(f"**Time Zone:** {h_sign}{hh}h {mm}m {ss:.3f}s")
-
-        st.markdown("### Explanation")
-        st.write(f"1. Decimal Degrees = input longitude = **{active_lon:.6f}°**")
-        st.write(f"2. Convert degrees → hours: divide by 15 → **{active_lon:.6f} / 15 = {dec_hours:.6f}h**")
-        st.write(f"3. Convert decimal hours → H:M:S → **{h_sign}{hh}:{mm}:{ss:.3f}**")
-
-    else:
-        # convert hours from manual input or slider (reverse)
-        dec_hours = active_lon / 15
-        h_sign, hh, mm, ss = decimal_hours_to_hms(dec_hours)
-
-        st.subheader("Result")
-        st.write(f"**Time Zone:** {h_sign}{hh}h {mm}m {ss:.3f}s")
-        st.write(f"**Longitude:** {active_lon:.6f}°")
-
-        st.markdown("### Explanation")
-        st.write(f"1. Decimal Hours = longitude / 15 = **{active_lon:.6f}/15 = {dec_hours:.6f}h**")
-        st.write(f"2. Convert decimal hours → D:M:S format")
-        st.write(f"3. Output Longitude = **{active_lon:.6f}°**")
-
-# ======================================================
-# CSV / Excel Batch Processing
+# CALCULATIONS BELOW INPUT + MAP
 # ======================================================
 
 st.divider()
-st.header("Batch CSV / Excel Conversion")
+st.header("Result")
+
+lon = st.session_state.active_lon
+
+if st.session_state.mode == "Longitude → Time Zone":
+    # convert longitude → time
+    dec_hours = lon / 15
+    sign, h, m, s = decimal_hours_to_hms(dec_hours)
+
+    st.subheader("Computed Time Zone")
+    st.write(f"**Time Zone:** {sign}{h}h {m}m {s:.3f}s")
+
+    # Explanation
+    st.markdown("### Explanation")
+    st.write(f"1. Convert longitude → decimal hours: `{lon:.6f}° ÷ 15 = {dec_hours:.6f}` hours")
+    st.write(f"2. Convert decimal hours → H:M:S = `{sign}{h}:{m}:{s:.3f}`")
+
+else:
+    # convert time → longitude
+    dec_hours = lon / 15  # reverse-derived hours
+    # but for explanation, reverse compute sign/h/m/s
+    sign, h, m, s = decimal_hours_to_hms(dec_hours)
+
+    st.subheader("Computed Longitude")
+    st.write(f"**Longitude:** {lon:.6f}°")
+
+    # Explanation
+    st.markdown("### Explanation")
+    st.write(f"1. Input time (synced from manual/map/slider) converts to decimal hours: `{sign}{h}h {m}m {s:.3f}s` → `{dec_hours:.6f}` hours")
+    st.write(f"2. Convert hours → longitude: `{dec_hours:.6f} × 15 = {lon:.6f}°`")
+
+# ======================================================
+# Batch Upload
+# ======================================================
+
+st.divider()
+st.header("Batch CSV / Excel Converter")
 
 uploaded = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"])
 
 if uploaded:
     df = pd.read_excel(uploaded) if uploaded.name.endswith(".xlsx") else pd.read_csv(uploaded)
-
-    st.write("Preview:", df.head())
+    st.write(df.head())
 
     if st.button("Convert File"):
         if st.session_state.mode == "Longitude → Time Zone":
             df["DecimalHours"] = df["Longitude"] / 15
-            df["TZ_Hours"] = df["DecimalHours"]
         else:
             df["Longitude"] = df["TZ_Hours"] * 15
 
-        st.download_button("Download Converted File", df.to_csv(index=False), file_name="converted.csv")
+        st.download_button("Download Converted File", df.to_csv(index=False), "converted.csv")
         st.write(df)
-
