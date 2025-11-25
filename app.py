@@ -74,7 +74,7 @@ with left:
             "Direction",
             ["E (positive)", "W (negative)"],
             key="lon_dir",
-            index=["E (positive)", "W (negative")].index(
+            index=["E (positive)", "W (negative)"].index(
                 st.session_state.get("map_lon_dir", "E (positive)")
             ),
         )
